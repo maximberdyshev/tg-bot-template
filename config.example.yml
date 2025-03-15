@@ -1,0 +1,7 @@
+bot:
+  owner: 777                                              # paste tg id (owner bot)
+  token: 123:bot-token                                    # paste tg bot token
+
+telegram:
+  apiEndpoint: "https://api.telegram.org/bot%s/%s"        # may change to your api endpoint
+  fileEndpoint: "https://api.telegram.org/file/bot%s/%s"  # may change to your file endpoint
