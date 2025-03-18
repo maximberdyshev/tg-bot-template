@@ -35,21 +35,6 @@ func (app *App) Run() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	updateCh := make(chan tgbotapi.Update, app.Bot.Buffer)
-	defer close(updateCh)
-
-	go app.Fetcher(updateCh)
-	go app.Processor(updateCh)
-
-	log.Println("App launching..")
-
-	<-ctx.Done()
-
-	log.Println("Recieved signal: interrupt.")
-	log.Println("App is stopped!")
-}
-
-func (app *App) Fetcher(ch chan<- tgbotapi.Update) {
 	updateCfg := tgbotapi.UpdateConfig{
 		Offset:         0,
 		Limit:          0,
@@ -57,33 +42,60 @@ func (app *App) Fetcher(ch chan<- tgbotapi.Update) {
 		AllowedUpdates: []string{},
 	}
 
+	fetCh := app.Fetcher(updateCfg)
+	app.Processor(fetCh)
+
+	log.Println("App launching..")
+
+	<-ctx.Done()
+
+	log.Println("Recieved: signal interrupt!")
+	log.Println("App is stopped!")
+}
+
+func (app *App) Fetcher(cfg tgbotapi.UpdateConfig) chan tgbotapi.Update {
+	ch := make(chan tgbotapi.Update, app.Bot.Buffer)
+
 	log.Println("Fetcher is running..")
 
-	for {
-		updates, err := app.Bot.GetUpdates(updateCfg)
-		if err != nil {
-			log.Println(err)
-			log.Println("Failed to get updates, retrying in 3 seconds...")
-			time.Sleep(time.Second * 3)
+	go func() {
+		defer close(ch)
 
-			continue
-		}
+		for {
+			updates, err := app.Bot.GetUpdates(cfg)
+			if err != nil {
+				log.Println(err)
+				log.Println("Failed to get updates, retrying in 3 seconds...")
+				time.Sleep(time.Second * 3)
 
-		for _, update := range updates {
-			if update.UpdateID >= updateCfg.Offset {
-				updateCfg.Offset = update.UpdateID + 1
-				ch <- update
+				continue
+			}
+
+			for _, update := range updates {
+				if update.UpdateID >= cfg.Offset {
+					cfg.Offset = update.UpdateID + 1
+					ch <- update
+				}
 			}
 		}
-	}
+	}()
+
+	return ch
 }
 
 func (app *App) Processor(ch <-chan tgbotapi.Update) {
 	log.Println("Processor is running..")
 
-	for u := range ch {
-		if u.Message != nil {
-			log.Println("new msg", u.Message.Text)
+	go func() {
+		for u := range ch {
+			switch {
+			case u.Message != nil:
+				app.message(u.Message)
+			case u.CallbackQuery != nil:
+				app.callback(u.CallbackQuery)
+			default:
+				log.Println("Unknown type update -_-")
+			}
 		}
-	}
+	}()
 }
